@@ -168,13 +168,21 @@ export default function ATPLApp() {
     return (
       <div style={styles.app}>
         <header style={styles.header}>
-          <div style={styles.logo}><div style={styles.logoIcon}>✈</div>ATPL Practice</div>
-          <div style={styles.scoreRow}>
-            <span style={styles.scoreItem("#2ECC71")}>✓ {score.correct}</span>
-            <span style={styles.scoreItem("#E74C3C")}>✗ {score.wrong}</span>
-            <span style={styles.scoreItem("#7A8BA3")}>— {score.skipped}</span>
-          </div>
-        </header>
+  <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+    <button
+      onClick={() => setScreen("home")}
+      style={{ background: "transparent", border: "none", color: "#7A8BA3", cursor: "pointer", fontSize: "13px", fontWeight: "600", padding: "6px 12px", borderRadius: "8px", border: "1px solid #1E2535" }}
+    >
+      ← Exit
+    </button>
+    <div style={styles.logo}><div style={styles.logoIcon}>✈</div>ATPL Practice</div>
+  </div>
+  <div style={styles.scoreRow}>
+    <span style={styles.scoreItem("#2ECC71")}>✓ {score.correct}</span>
+    <span style={styles.scoreItem("#E74C3C")}>✗ {score.wrong}</span>
+    <span style={styles.scoreItem("#7A8BA3")}>— {score.skipped}</span>
+  </div>
+</header>
         <main style={styles.main}>
           <div style={styles.progressBar}><div style={{ ...styles.progressFill, width: `${progress}%` }} /></div>
           <div style={styles.questionMeta}>
