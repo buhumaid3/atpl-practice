@@ -1,15 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-
+ 
 const SUPABASE_URL = "https://nvuvjqojwunkivlpvrqj.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im52dXZqcW9qd3Vua2l2bHB2cnFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0MDM4NjYsImV4cCI6MjA5Nzk3OTg2Nn0.NX12oaZU8q6VVEranzs9WRB59kI1_UVIWfJzujQjtEQ";
-
+ 
 const SUBJECTS = [
   { code: "ALL", name: "All Subjects", color: "#4A90D9", count: "2,380 questions" },
   { code: "010", name: "Air Law", color: "#E74C3C", count: "1,274 questions" },
   { code: "031", name: "Mass & Balance", color: "#2ECC71", count: "400 questions" },
   { code: "032", name: "Performance", color: "#F39C12", count: "706 questions" },
 ];
-
+ 
 function cleanQuestion(text) {
   if (!text) return "";
   return text
@@ -18,7 +18,7 @@ function cleanQuestion(text) {
     .replace(/^(—\s*QUESTIGN?.*?Q\s+\d+\/\d+\s+N[^\s]+\s+[@©]\s+[\d:]+\s*)/i, "")
     .trim();
 }
-
+ 
 async function fetchQuestions(subjectCode, limit = 2500) {
   let url = `${SUPABASE_URL}/rest/v1/questions?select=*&limit=${limit}&order=id`;
   if (subjectCode !== "ALL") url += `&subject_code=eq.${subjectCode}`;
@@ -27,7 +27,7 @@ async function fetchQuestions(subjectCode, limit = 2500) {
   });
   return res.json();
 }
-
+ 
 function shuffle(arr) {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -36,13 +36,13 @@ function shuffle(arr) {
   }
   return a;
 }
-
+ 
 function formatTime(seconds) {
   const m = Math.floor(seconds / 60).toString().padStart(2, "0");
   const s = (seconds % 60).toString().padStart(2, "0");
   return `${m}:${s}`;
 }
-
+ 
 export default function ATPLApp() {
   const [screen, setScreen] = useState("home");
   const [selectedSubject, setSelectedSubject] = useState("ALL");
@@ -65,7 +65,7 @@ export default function ATPLApp() {
   const [allQuestions, setAllQuestions] = useState([]);
   const sessionInterval = useRef(null);
   const questionInterval = useRef(null);
-
+ 
   // Timers
   useEffect(() => {
     if (screen === "practice") {
@@ -73,7 +73,7 @@ export default function ATPLApp() {
       return () => clearInterval(sessionInterval.current);
     }
   }, [screen]);
-
+ 
   useEffect(() => {
     if (screen === "practice") {
       setQuestionTimer(0);
@@ -82,7 +82,7 @@ export default function ATPLApp() {
       return () => clearInterval(questionInterval.current);
     }
   }, [current, screen]);
-
+ 
   const startSession = useCallback(async (reviewFlagged = false) => {
     setLoading(true);
     const data = await fetchQuestions(selectedSubject);
@@ -106,12 +106,12 @@ export default function ATPLApp() {
     setMode(reviewFlagged ? "review_flagged" : "practice");
     setScreen("practice");
   }, [selectedSubject, sessionSize, flagged]);
-
+ 
   const q = queue[current];
   const options = q ? [q.option_a, q.option_b, q.option_c, q.option_d].filter(Boolean) : [];
   const correctOption = q?.correct_answer;
   const subjectColor = SUBJECTS.find(s => s.code === (q?.subject_code || selectedSubject))?.color || "#4A90D9";
-
+ 
   function handleSelect(opt) {
     if (revealed) return;
     setSelected(opt);
@@ -124,7 +124,7 @@ export default function ATPLApp() {
     setQuestionTimes(t => ({ ...t, [current]: questionTimer }));
     clearInterval(questionInterval.current);
   }
-
+ 
   function handleSkip() {
     if (revealed) return;
     setScore(s => ({ ...s, skipped: s.skipped + 1 }));
@@ -132,7 +132,7 @@ export default function ATPLApp() {
     setQuestionTimes(t => ({ ...t, [current]: questionTimer }));
     next();
   }
-
+ 
   function toggleFlag() {
     if (!q) return;
     setFlagged(f => {
@@ -141,7 +141,7 @@ export default function ATPLApp() {
       return nf;
     });
   }
-
+ 
   function next() {
     if (current + 1 >= queue.length) {
       clearInterval(sessionInterval.current);
@@ -154,7 +154,7 @@ export default function ATPLApp() {
       setActiveTab("question");
     }
   }
-
+ 
   function jumpTo(idx) {
     if (idx >= 0 && idx < queue.length) {
       setCurrent(idx);
@@ -165,13 +165,13 @@ export default function ATPLApp() {
     setShowJump(false);
     setJumpInput("");
   }
-
+ 
   const progress = queue.length ? ((current) / queue.length) * 100 : 0;
   const isFlagged = q && flagged.has(q.id);
   const avgTime = Object.values(questionTimes).length > 0
     ? Math.round(Object.values(questionTimes).reduce((a, b) => a + b, 0) / Object.values(questionTimes).length)
     : 0;
-
+ 
   // ── STYLES ─────────────────────────────────────────
   const c = {
     bg: "#080C18",
@@ -184,7 +184,7 @@ export default function ATPLApp() {
     red: "#E74C3C",
     orange: "#F39C12",
   };
-
+ 
   const s = {
     app: { minHeight: "100vh", background: c.bg, color: c.text, fontFamily: "'Inter', system-ui, sans-serif", display: "flex", flexDirection: "column" },
     header: { padding: "14px 20px", borderBottom: `1px solid ${c.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", background: c.surface, position: "sticky", top: 0, zIndex: 10 },
@@ -194,7 +194,7 @@ export default function ATPLApp() {
     btn: (bg, color = "#fff", border = "none") => ({ padding: "12px 24px", borderRadius: "10px", background: bg, border, color, fontSize: "14px", fontWeight: "600", cursor: "pointer" }),
     iconBtn: (active = false) => ({ background: "transparent", border: `1px solid ${active ? c.blue : c.border}`, borderRadius: "8px", color: active ? c.blue : c.muted, cursor: "pointer", padding: "7px 10px", fontSize: "13px", fontWeight: "600" }),
   };
-
+ 
   // ── HOME ────────────────────────────────────────────
   if (screen === "home") return (
     <div style={s.app}>
@@ -211,7 +211,7 @@ export default function ATPLApp() {
           </h1>
           <p style={{ color: c.muted, fontSize: "15px" }}>Real exam questions. Instant feedback. Track your progress.</p>
         </div>
-
+ 
         {/* Stats bar */}
         <div style={{ display: "flex", gap: "10px", marginBottom: "32px", flexWrap: "wrap" }}>
           {[
@@ -225,7 +225,7 @@ export default function ATPLApp() {
             </div>
           ))}
         </div>
-
+ 
         {/* Subject select */}
         <div style={{ fontSize: "11px", fontWeight: "700", letterSpacing: "1.5px", textTransform: "uppercase", color: c.blue, marginBottom: "10px" }}>Select Subject</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "10px", marginBottom: "24px" }}>
@@ -240,7 +240,7 @@ export default function ATPLApp() {
             );
           })}
         </div>
-
+ 
         {/* Session length */}
         <div style={{ fontSize: "11px", fontWeight: "700", letterSpacing: "1.5px", textTransform: "uppercase", color: c.blue, marginBottom: "10px" }}>Session Length</div>
         <div style={{ display: "flex", gap: "8px", marginBottom: "24px", flexWrap: "wrap" }}>
@@ -251,7 +251,7 @@ export default function ATPLApp() {
             </button>
           ))}
         </div>
-
+ 
         {/* Start buttons */}
         <button onClick={() => startSession(false)} disabled={loading}
           style={{ width: "100%", padding: "16px", borderRadius: "12px", background: `linear-gradient(135deg, ${c.blue}, #2E86C1)`, border: "none", color: "#fff", fontSize: "16px", fontWeight: "700", cursor: "pointer", marginBottom: "10px" }}>
@@ -266,7 +266,7 @@ export default function ATPLApp() {
       </main>
     </div>
   );
-
+ 
   // ── PRACTICE ────────────────────────────────────────
   if (screen === "practice" && q) {
     const labels = ["A", "B", "C", "D"];
@@ -287,12 +287,12 @@ export default function ATPLApp() {
             <span style={{ padding: "4px 10px", borderRadius: "20px", background: `${c.muted}20`, color: c.muted, fontSize: "12px", fontWeight: "700" }}>— {score.skipped}</span>
           </div>
         </header>
-
+ 
         {/* Progress bar */}
         <div style={{ height: "3px", background: c.border }}>
           <div style={{ height: "100%", width: `${progress}%`, background: `linear-gradient(90deg, ${c.blue}, ${c.green})`, transition: "width 0.4s ease" }} />
         </div>
-
+ 
         <main style={s.main}>
           {/* Question meta row */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
@@ -329,7 +329,7 @@ export default function ATPLApp() {
               </span>
             </div>
           </div>
-
+ 
           {/* Tabs */}
           <div style={{ display: "flex", gap: "4px", marginBottom: "20px", background: c.surface, padding: "4px", borderRadius: "10px", border: `1px solid ${c.border}` }}>
             {["question", "explanation"].map(tab => (
@@ -339,13 +339,13 @@ export default function ATPLApp() {
               </button>
             ))}
           </div>
-
+ 
           {activeTab === "question" ? (
             <>
               <div style={{ fontSize: "16px", fontWeight: "500", lineHeight: "1.65", marginBottom: "24px", color: c.text }}>
                 {cleanQ}
               </div>
-
+ 
               {options.map((opt, i) => {
                 let bg = c.surface, border = c.border, color = c.text;
                 if (revealed) {
@@ -364,7 +364,7 @@ export default function ATPLApp() {
                   </button>
                 );
               })}
-
+ 
               <div style={{ display: "flex", gap: "10px", marginTop: "12px" }}>
                 {!revealed && <button onClick={handleSkip} style={{ flex: 1, padding: "14px", borderRadius: "12px", border: `2px solid ${c.border}`, background: "transparent", color: c.muted, fontSize: "14px", fontWeight: "600", cursor: "pointer" }}>Skip</button>}
                 {revealed && (
@@ -401,7 +401,7 @@ export default function ATPLApp() {
               )}
             </div>
           )}
-
+ 
           {/* Question strip */}
           <div style={{ marginTop: "20px", display: "flex", gap: "4px", flexWrap: "wrap" }}>
             {queue.map((_, i) => {
@@ -419,7 +419,7 @@ export default function ATPLApp() {
       </div>
     );
   }
-
+ 
   // ── RESULT ──────────────────────────────────────────
   if (screen === "result") {
     const total = score.correct + score.wrong + score.skipped;
@@ -436,7 +436,7 @@ export default function ATPLApp() {
           <div style={{ background: c.surface, borderRadius: "20px", padding: "36px", textAlign: "center", border: `1px solid ${c.border}`, marginBottom: "16px" }}>
             <div style={{ fontSize: "80px", fontWeight: "800", letterSpacing: "-4px", lineHeight: 1, color: pass ? c.green : c.red, marginBottom: "8px" }}>{pct}%</div>
             <div style={{ fontSize: "15px", color: c.muted, marginBottom: "28px" }}>{pass ? "🎉 Above passing threshold (75%)" : "Keep practicing — aim for 75%+"}</div>
-
+ 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", marginBottom: "24px" }}>
               {[
                 { label: "Correct", value: score.correct, color: c.green },
@@ -449,7 +449,7 @@ export default function ATPLApp() {
                 </div>
               ))}
             </div>
-
+ 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "10px", marginBottom: "24px", fontSize: "13px" }}>
               <div style={{ background: c.border, borderRadius: "10px", padding: "12px" }}>
                 <div style={{ color: c.muted, marginBottom: "2px" }}>Total Time</div>
@@ -461,7 +461,7 @@ export default function ATPLApp() {
               </div>
             </div>
           </div>
-
+ 
           {/* Question review strip */}
           <div style={{ background: c.surface, borderRadius: "14px", padding: "20px", border: `1px solid ${c.border}`, marginBottom: "16px" }}>
             <div style={{ fontSize: "11px", fontWeight: "700", letterSpacing: "1px", textTransform: "uppercase", color: c.blue, marginBottom: "12px" }}>Question Breakdown</div>
@@ -479,7 +479,7 @@ export default function ATPLApp() {
               <span><span style={{ color: c.muted }}>■</span> Skipped</span>
             </div>
           </div>
-
+ 
           <div style={{ display: "flex", gap: "10px" }}>
             <button onClick={() => startSession(false)} style={{ flex: 2, padding: "14px", borderRadius: "12px", border: "none", background: `linear-gradient(135deg, ${c.blue}, #2E86C1)`, color: "#fff", fontSize: "15px", fontWeight: "700", cursor: "pointer" }}>
               Practice Again
@@ -492,6 +492,6 @@ export default function ATPLApp() {
       </div>
     );
   }
-
+ 
   return <div style={{ ...s.app, alignItems: "center", justifyContent: "center" }}><div style={{ color: c.muted }}>Loading...</div></div>;
 }
