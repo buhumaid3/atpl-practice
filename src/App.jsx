@@ -9,6 +9,8 @@ import {
   AlertCircle, ChevronDown, ChevronUp, Layers, Activity
 } from "lucide-react";
 import StatsScreen from "./Stats.jsx";
+import AuthScreen from "./Auth.jsx";
+import { pullProgress, pushProgress, signOut } from "./useSync.js";
 
 const SUPABASE_URL = "https://nvuvjqojwunkivlpvrqj.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im52dXZqcW9qd3Vua2l2bHB2cnFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0MDM4NjYsImV4cCI6MjA5Nzk3OTg2Nn0.NX12oaZU8q6VVEranzs9WRB59kI1_UVIWfJzujQjtEQ";
@@ -379,10 +381,74 @@ export default function App(){
   const [examTimeTaken, setExamTimeTaken]= useState(0);
   const [horizAnim,     setHorizAnim]    = useState({pitch:0,roll:0});
 
+  // Auth state
+  const [authSession,   setAuthSession]  = useState(()=>{
+    try { const s=localStorage.getItem("atpl_session"); return s?JSON.parse(s):null; } catch { return null; }
+  });
+  const [syncStatus,    setSyncStatus]   = useState(null); // null | "syncing" | "synced" | "error"
+
   const sRef=useRef(null),qRef=useRef(null),hRef=useRef(null),eTimerRef=useRef(null);
 
   useEffect(()=>{saveHistory(history);},[history]);
   useEffect(()=>{saveFlagged(flagged);},[flagged]);
+
+  // ── AUTH HANDLERS ──────────────────────────────────────────────────────────
+  async function handleAuth(session) {
+    // Save session token
+    localStorage.setItem("atpl_session", JSON.stringify(session));
+    setAuthSession(session);
+    setSyncStatus("syncing");
+    try {
+      // Pull cloud progress and merge with local
+      const cloud = await pullProgress(session.access_token);
+      if (cloud) {
+        const local = loadHistory();
+        const localFlagged = loadFlagged();
+        // Merge: union of seen/incorrect, cloud wins on conflicts
+        const merged = {
+          seen:      { ...local.seen,      ...cloud.seen },
+          incorrect: { ...local.incorrect, ...cloud.incorrect },
+        };
+        const mergedFlagged = new Set([...localFlagged, ...(cloud.flagged||[])]);
+        saveHistory(merged);
+        saveFlagged(mergedFlagged);
+        setHistory(merged);
+        setFlagged(mergedFlagged);
+      }
+      setSyncStatus("synced");
+    } catch { setSyncStatus("error"); }
+    setScreen("home");
+  }
+
+  async function handleSignOut() {
+    if (authSession) {
+      try { await signOut(authSession.access_token); } catch {}
+    }
+    localStorage.removeItem("atpl_session");
+    setAuthSession(null);
+    setSyncStatus(null);
+  }
+
+  async function syncToCloud() {
+    if (!authSession) return;
+    setSyncStatus("syncing");
+    try {
+      const h = loadHistory();
+      const f = loadFlagged();
+      const s = JSON.parse(localStorage.getItem("atpl_sessions")||"[]");
+      const ok = await pushProgress(authSession.access_token, authSession.user?.id || authSession.user_id, {
+        seen: h.seen, incorrect: h.incorrect, flagged: [...f], sessions: s,
+      });
+      setSyncStatus(ok ? "synced" : "error");
+    } catch { setSyncStatus("error"); }
+  }
+
+  // Auto-sync every time history changes (debounced)
+  useEffect(()=>{
+    if(!authSession) return;
+    const t = setTimeout(()=>syncToCloud(), 3000);
+    return ()=>clearTimeout(t);
+  },[history, flagged]);
 
   // Horizon animation
   useEffect(()=>{
@@ -525,6 +591,16 @@ export default function App(){
   }
 
   // ═══════════════════════════════════════════════════════════════════════
+  // AUTH
+  // ═══════════════════════════════════════════════════════════════════════
+  if(screen==="auth") return(
+    <AuthScreen
+      onAuth={handleAuth}
+      onGuest={()=>setScreen("home")}
+    />
+  );
+
+  // ═══════════════════════════════════════════════════════════════════════
   // HOME
   // ═══════════════════════════════════════════════════════════════════════
   if(screen==="home") return(
@@ -541,6 +617,19 @@ export default function App(){
           <button onClick={()=>setScreen("stats")} style={{display:"flex",alignItems:"center",gap:5,padding:"5px 12px",borderRadius:8,border:`1px solid ${T.border}`,background:T.card,color:T.sub,cursor:"pointer",fontSize:12,fontWeight:600}}>
             <Activity size={13}/>Stats
           </button>
+          {authSession ? (
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <div style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px",borderRadius:8,background:T.card,border:`1px solid ${T.border}`,fontSize:11}}>
+                <div style={{width:6,height:6,borderRadius:"50%",background:syncStatus==="synced"?T.green:syncStatus==="syncing"?T.amber:syncStatus==="error"?T.red:T.dim}}/>
+                <span style={{color:T.sub}}>{syncStatus==="synced"?"Synced":syncStatus==="syncing"?"Syncing...":syncStatus==="error"?"Sync error":"Offline"}</span>
+              </div>
+              <button onClick={handleSignOut} style={{padding:"5px 10px",borderRadius:8,border:`1px solid ${T.border}`,background:T.card,color:T.sub,cursor:"pointer",fontSize:12,fontWeight:600}}>Sign out</button>
+            </div>
+          ) : (
+            <button onClick={()=>setScreen("auth")} style={{display:"flex",alignItems:"center",gap:5,padding:"5px 12px",borderRadius:8,border:`1px solid ${T.blue}50`,background:`${T.blue}10`,color:T.blue,cursor:"pointer",fontSize:12,fontWeight:600}}>
+              Sign in
+            </button>
+          )}
         </div>
       </div>
 
