@@ -799,12 +799,9 @@ export default function App(){
           {!online&&<div style={{display:"flex",alignItems:"center",gap:4,padding:"4px 9px",borderRadius:6,background:`${TH.amber}15`,border:`1px solid ${TH.amber}40`,fontSize:11,color:TH.amber,fontWeight:600}}>
             Offline
           </div>}
-          {/* Cache status */}
+          {/* Cache status — only show while actively caching */}
           {cacheStatus==="caching"&&<div style={{display:"flex",alignItems:"center",gap:4,padding:"4px 9px",borderRadius:6,background:TH.card,border:`1px solid ${TH.border}`,fontSize:11,color:TH.sub}}>
             Caching...
-          </div>}
-          {cacheStatus==="cached"&&online&&<div style={{display:"flex",alignItems:"center",gap:4,padding:"4px 9px",borderRadius:6,background:`${TH.green}10`,border:`1px solid ${TH.green}30`,fontSize:11,color:TH.green}}>
-            Available offline
           </div>}
           {/* Theme toggle */}
           <button onClick={()=>setTheme(t=>t==="dark"?"light":"dark")} style={{padding:"5px 9px",borderRadius:8,border:`1px solid ${TH.border}`,background:TH.card,color:TH.sub,cursor:"pointer",fontSize:13}}>
