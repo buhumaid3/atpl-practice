@@ -95,6 +95,22 @@ const T = {
   white:"#FFFFFF", purple:"#A78BFA", cyan:"#06B6D4",
 };
 
+// Dynamic theme colors
+function getTheme(theme) {
+  if (theme === "light") return {
+    bg:"#F4F6FA", panel:"#FFFFFF", card:"#FFFFFF", border:"#E2E8F0",
+    borderHi:"#CBD5E0", text:"#1A202C", sub:"#718096", dim:"#A0AEC0",
+    blue:"#2B6CB0", green:"#276749", red:"#C53030", amber:"#B7791F",
+    white:"#FFFFFF", purple:"#553C9A", cyan:"#086F83",
+  };
+  return {
+    bg:"#09090B", panel:"#0F1014", card:"#131318", border:"#1C1C22",
+    borderHi:"#2A2A35", text:"#F0F0F5", sub:"#8888A0", dim:"#444455",
+    blue:"#3B9EFF", green:"#22C55E", red:"#EF4444", amber:"#F59E0B",
+    white:"#FFFFFF", purple:"#A78BFA", cyan:"#06B6D4",
+  };
+}
+
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
   *{box-sizing:border-box;margin:0;padding:0;}
@@ -381,6 +397,19 @@ export default function App(){
   const [examTimeTaken, setExamTimeTaken]= useState(0);
   const [horizAnim,     setHorizAnim]    = useState({pitch:0,roll:0});
 
+  // Theme
+  const [theme, setTheme] = useState(()=>localStorage.getItem("atpl_theme")||"dark");
+
+  // Streak
+  const [streak, setStreak] = useState(()=>{
+    try { return JSON.parse(localStorage.getItem("atpl_streak")||'{"count":0,"lastDate":null}'); }
+    catch { return {count:0,lastDate:null}; }
+  });
+
+  // Exam countdown
+  const [examDate, setExamDate] = useState(()=>localStorage.getItem("atpl_examdate")||"");
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
   // Auth state
   const [authSession,   setAuthSession]  = useState(()=>{
     try { const s=localStorage.getItem("atpl_session"); return s?JSON.parse(s):null; } catch { return null; }
@@ -389,7 +418,12 @@ export default function App(){
 
   const sRef=useRef(null),qRef=useRef(null),hRef=useRef(null),eTimerRef=useRef(null);
 
+  // Dynamic theme — recalculated on every render when theme changes
+  const TH = getTheme(theme);
+
   useEffect(()=>{saveHistory(history);},[history]);
+  useEffect(()=>{localStorage.setItem("atpl_theme",theme);},[theme]);
+  useEffect(()=>{localStorage.setItem("atpl_examdate",examDate);},[examDate]);
   useEffect(()=>{saveFlagged(flagged);},[flagged]);
 
   // ── AUTH HANDLERS ──────────────────────────────────────────────────────────
@@ -521,10 +555,93 @@ export default function App(){
 
   const filterColors={all:T.blue,figures:T.purple,no_figures:T.sub,unseen:T.cyan,incorrect:T.red,flagged:T.amber};
 
+  // ── STREAK ────────────────────────────────────────────────────────────────
+  function updateStreak() {
+    const today = new Date().toISOString().split("T")[0];
+    const yesterday = new Date(Date.now()-86400000).toISOString().split("T")[0];
+    setStreak(s => {
+      let newStreak;
+      if (s.lastDate === today) return s; // already counted today
+      else if (s.lastDate === yesterday) newStreak = { count: s.count + 1, lastDate: today };
+      else newStreak = { count: 1, lastDate: today }; // streak broken
+      localStorage.setItem("atpl_streak", JSON.stringify(newStreak));
+      return newStreak;
+    });
+  }
+
+  // ── SPACED REPETITION SHUFFLE ──────────────────────────────────────────
+  function spacedShuffle(pool, count) {
+    // Weight: wrong = 3x, unseen = 1x, correct (seen+not wrong) = 0.3x
+    const weighted = [];
+    pool.forEach(q => {
+      const isWrong   = history.incorrect[q.id];
+      const isSeen    = history.seen[q.id];
+      const isCorrect = isSeen && !isWrong;
+      const weight = isWrong ? 3 : isCorrect ? 0.3 : 1;
+      const copies = Math.max(1, Math.round(weight * 10));
+      for (let i = 0; i < copies; i++) weighted.push(q);
+    });
+    const shuffled = shuffle(weighted);
+    // Deduplicate preserving spaced order
+    const seen = new Set();
+    const result = [];
+    for (const q of shuffled) {
+      if (!seen.has(q.id)) { seen.add(q.id); result.push(q); }
+      if (result.length >= count) break;
+    }
+    return result;
+  }
+
+  // ── QUICK 10 ───────────────────────────────────────────────────────────
+  function startQuick10() {
+    if (!allPool.length) return;
+    const pool = spacedShuffle(allPool, 10);
+    setQueue(pool); setIdx(0); setSel(null); setRevealed(false);
+    setTab("question"); setScore({correct:0,wrong:0,skipped:0});
+    setAnswers({}); setSSec(0); setQSec(0); setQTimes({});
+    updateStreak();
+    setScreen("study");
+  }
+
+  // ── EXAM COUNTDOWN ─────────────────────────────────────────────────────
+  function getDaysRemaining() {
+    if (!examDate) return null;
+    const diff = new Date(examDate) - new Date();
+    return Math.ceil(diff / 86400000);
+  }
+
+  function getDailyTarget() {
+    const days = getDaysRemaining();
+    if (!days || days <= 0) return null;
+    const unseen = 2380 - Object.keys(history.seen).length;
+    return Math.ceil(unseen / days);
+  }
+
+  // ── WEAK AREA DETECTION ────────────────────────────────────────────────
+  function getWeakestSubtopic() {
+    const totalSeen = Object.keys(history.seen).length;
+    if (totalSeen < 20) return null; // need enough data
+    let worst = null, worstAcc = 100;
+    ["010","031","032"].forEach(subCode => {
+      const subQ = allPool.filter(q => q.subject_code === subCode);
+      const subtopics = SUBTOPICS[subCode] || [];
+      subtopics.forEach(topic => {
+        const topicQ = subQ.filter(q => q._subtopic === topic.code);
+        const seen = topicQ.filter(q => history.seen[q.id]);
+        if (seen.length < 5) return; // need enough data per topic
+        const incorrect = topicQ.filter(q => history.incorrect[q.id]).length;
+        const acc = Math.round(((seen.length - incorrect) / seen.length) * 100);
+        if (acc < worstAcc) { worst = { ...topic, subCode, acc, seen: seen.length }; worstAcc = acc; }
+      });
+    });
+    return worst;
+  }
+
   // Study helpers
   function startStudy(){
     if(!filteredPool.length)return;
-    const pool=shuffle(filteredPool).slice(0,sessLen);
+    const pool=spacedShuffle(filteredPool,sessLen);
+    updateStreak();
     setQueue(pool);setIdx(0);setSel(null);setRevealed(false);
     setTab("question");setScore({correct:0,wrong:0,skipped:0});
     setAnswers({});setSSec(0);setQSec(0);setQTimes({});
@@ -596,71 +713,133 @@ export default function App(){
   if(screen==="auth") return(
     <AuthScreen
       onAuth={handleAuth}
-      onGuest={()=>setScreen("home")}
     />
   );
 
   // ═══════════════════════════════════════════════════════════════════════
   // HOME
   // ═══════════════════════════════════════════════════════════════════════
-  if(screen==="home") return(
-    <div style={{minHeight:"100vh",background:T.bg,color:T.text,fontFamily:"Inter,sans-serif",display:"flex",flexDirection:"column"}}>
-      <style>{CSS}</style>
-      <div style={{padding:"13px 22px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"space-between",background:T.panel}}>
+  if(screen==="home") {
+    const daysLeft = getDaysRemaining();
+    const dailyTarget = getDailyTarget();
+    const weakSpot = getWeakestSubtopic();
+    const isDark = theme === "dark";
+    const TH = getTheme(theme);
+
+    return(
+    <div style={{minHeight:"100vh",background:TH.bg,color:TH.text,fontFamily:"Inter,sans-serif",display:"flex",flexDirection:"column"}}>
+      <style>{CSS + (theme==="light"?`body{background:#F4F6FA;}`:"")}</style>
+
+      {/* HEADER */}
+      <div style={{padding:"11px 20px",borderBottom:`1px solid ${TH.border}`,display:"flex",alignItems:"center",justifyContent:"space-between",background:TH.panel}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <div style={{width:32,height:32,borderRadius:8,background:"linear-gradient(135deg,#1A3A6B,#2E5FA3)",display:"flex",alignItems:"center",justifyContent:"center",border:`1px solid ${T.blue}40`}}><Plane size={15} color={T.blue} strokeWidth={2}/></div>
-          <div><div style={{fontSize:14,fontWeight:700}}>ATPL Practice</div><div style={{fontSize:11,color:T.sub}}>Aviation Exam Preparation</div></div>
+          <div style={{width:30,height:30,borderRadius:8,background:"linear-gradient(135deg,#1A3A6B,#2E5FA3)",display:"flex",alignItems:"center",justifyContent:"center",border:`1px solid ${TH.blue}40`}}><Plane size={14} color={TH.blue} strokeWidth={2}/></div>
+          <div><div style={{fontSize:14,fontWeight:700,color:TH.text}}>ATPL Practice</div></div>
         </div>
-        <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          <div style={{fontSize:11,color:T.sub,padding:"4px 10px",borderRadius:6,background:T.card,border:`1px solid ${T.border}`}}>{Object.keys(history.seen).length} seen · {Object.keys(history.incorrect).length} incorrect</div>
-          {flagged.size>0&&<div style={{display:"flex",alignItems:"center",gap:4,padding:"4px 10px",borderRadius:6,background:T.card,border:`1px solid ${T.border}`,fontSize:11,color:T.amber,fontWeight:600}}><Bookmark size={11}/>{flagged.size}</div>}
-          <button onClick={()=>setScreen("stats")} style={{display:"flex",alignItems:"center",gap:5,padding:"5px 12px",borderRadius:8,border:`1px solid ${T.border}`,background:T.card,color:T.sub,cursor:"pointer",fontSize:12,fontWeight:600}}>
+        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+          {/* Streak */}
+          {streak.count>0&&<div style={{display:"flex",alignItems:"center",gap:4,padding:"4px 9px",borderRadius:6,background:TH.card,border:`1px solid ${TH.border}`,fontSize:12,color:TH.amber,fontWeight:700}}>
+            🔥 {streak.count}
+          </div>}
+          {/* Sync status */}
+          {authSession&&<div style={{display:"flex",alignItems:"center",gap:4,padding:"4px 9px",borderRadius:6,background:TH.card,border:`1px solid ${TH.border}`,fontSize:11}}>
+            <div style={{width:5,height:5,borderRadius:"50%",background:syncStatus==="synced"?TH.green:syncStatus==="syncing"?TH.amber:syncStatus==="error"?TH.red:TH.dim}}/>
+            <span style={{color:TH.sub}}>{syncStatus==="synced"?"Synced":syncStatus==="syncing"?"Syncing...":"Offline"}</span>
+          </div>}
+          {/* Theme toggle */}
+          <button onClick={()=>setTheme(t=>t==="dark"?"light":"dark")} style={{padding:"5px 9px",borderRadius:8,border:`1px solid ${TH.border}`,background:TH.card,color:TH.sub,cursor:"pointer",fontSize:13}}>
+            {isDark?"☀":"🌙"}
+          </button>
+          <button onClick={()=>setScreen("stats")} style={{display:"flex",alignItems:"center",gap:4,padding:"5px 10px",borderRadius:8,border:`1px solid ${TH.border}`,background:TH.card,color:TH.sub,cursor:"pointer",fontSize:12,fontWeight:600}}>
             <Activity size={13}/>Stats
           </button>
-          {authSession ? (
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <div style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px",borderRadius:8,background:T.card,border:`1px solid ${T.border}`,fontSize:11}}>
-                <div style={{width:6,height:6,borderRadius:"50%",background:syncStatus==="synced"?T.green:syncStatus==="syncing"?T.amber:syncStatus==="error"?T.red:T.dim}}/>
-                <span style={{color:T.sub}}>{syncStatus==="synced"?"Synced":syncStatus==="syncing"?"Syncing...":syncStatus==="error"?"Sync error":"Offline"}</span>
-              </div>
-              <button onClick={handleSignOut} style={{padding:"5px 10px",borderRadius:8,border:`1px solid ${T.border}`,background:T.card,color:T.sub,cursor:"pointer",fontSize:12,fontWeight:600}}>Sign out</button>
-            </div>
-          ) : (
-            <button onClick={()=>setScreen("auth")} style={{display:"flex",alignItems:"center",gap:5,padding:"5px 12px",borderRadius:8,border:`1px solid ${T.blue}50`,background:`${T.blue}10`,color:T.blue,cursor:"pointer",fontSize:12,fontWeight:600}}>
-              Sign in
-            </button>
-          )}
+          {authSession
+            ? <button onClick={handleSignOut} style={{padding:"5px 10px",borderRadius:8,border:`1px solid ${TH.border}`,background:TH.card,color:TH.sub,cursor:"pointer",fontSize:12,fontWeight:600}}>Sign out</button>
+            : <button onClick={()=>setScreen("auth")} style={{display:"flex",alignItems:"center",gap:4,padding:"5px 10px",borderRadius:8,border:`1px solid ${TH.blue}50`,background:`${TH.blue}10`,color:TH.blue,cursor:"pointer",fontSize:12,fontWeight:600}}>Sign in</button>
+          }
         </div>
       </div>
 
-      <div style={{flex:1,maxWidth:820,margin:"0 auto",width:"100%",padding:"22px"}}>
-        {/* Hero */}
-        <div className="fade-up" style={{display:"flex",alignItems:"center",gap:22,marginBottom:24,padding:"20px",borderRadius:16,background:T.card,border:`1px solid ${T.border}`}}>
-          <div style={{flexShrink:0}}><Horizon pitch={horizAnim.pitch} roll={horizAnim.roll} size={100}/></div>
-          <div>
-            <div style={{fontSize:11,fontWeight:600,letterSpacing:"2px",textTransform:"uppercase",color:T.blue,marginBottom:5}}>Preflight Check</div>
-            <h1 style={{fontSize:24,fontWeight:800,lineHeight:1.15,letterSpacing:"-0.5px",marginBottom:6}}>Ready for your ATPL exam?</h1>
-            <p style={{fontSize:13,color:T.sub,lineHeight:1.6}}>Real exam questions. Study mode with smart filters, sub-topic drill-down, and official EASA exam simulation.</p>
+      <div style={{flex:1,maxWidth:820,margin:"0 auto",width:"100%",padding:"18px 20px"}}>
+
+        {/* HERO + QUICK ACTIONS */}
+        <div className="fade-up" style={{display:"flex",alignItems:"center",gap:18,marginBottom:16,padding:"18px",borderRadius:14,background:TH.card,border:`1px solid ${TH.border}`}}>
+          <div style={{flexShrink:0}}><Horizon pitch={horizAnim.pitch} roll={horizAnim.roll} size={90}/></div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:11,fontWeight:600,letterSpacing:"2px",textTransform:"uppercase",color:TH.blue,marginBottom:4}}>Preflight Check</div>
+            <h1 style={{fontSize:22,fontWeight:800,lineHeight:1.15,letterSpacing:"-0.5px",marginBottom:6,color:TH.text}}>Ready for your ATPL exam?</h1>
+            <p style={{fontSize:12,color:TH.sub,lineHeight:1.6,marginBottom:12}}>Real exam questions. Smart filters, sub-topic drill-down, EASA exam simulation.</p>
+            {/* Quick 10 */}
+            <button onClick={startQuick10} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"8px 16px",borderRadius:9,border:`1px solid ${TH.green}50`,background:`${TH.green}15`,color:TH.green,fontSize:13,fontWeight:700,cursor:"pointer"}}>
+              <Zap size={13}/>Quick 10 — Random Questions
+            </button>
+          </div>
+        </div>
+
+        {/* STREAK + COUNTDOWN ROW */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
+          {/* Streak card */}
+          <div style={{padding:"14px",borderRadius:12,background:TH.card,border:`1px solid ${TH.border}`}}>
+            <div style={{fontSize:10,color:TH.sub,fontWeight:600,textTransform:"uppercase",letterSpacing:"1px",marginBottom:8}}>Study Streak</div>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <div style={{fontSize:32,fontWeight:800,color:streak.count>0?TH.amber:TH.dim,letterSpacing:"-1px"}}>🔥 {streak.count}</div>
+              <div style={{fontSize:12,color:TH.sub}}>{streak.count===1?"day":"days"} in a row{streak.count===0?" — start today!":""}</div>
+            </div>
+            {streak.lastDate&&<div style={{fontSize:10,color:TH.dim,marginTop:4}}>Last studied: {streak.lastDate}</div>}
+          </div>
+
+          {/* Exam countdown */}
+          <div style={{padding:"14px",borderRadius:12,background:TH.card,border:`1px solid ${TH.border}`}}>
+            <div style={{fontSize:10,color:TH.sub,fontWeight:600,textTransform:"uppercase",letterSpacing:"1px",marginBottom:8}}>Exam Countdown</div>
+            {examDate && daysLeft !== null ? (
+              <div>
+                <div style={{fontSize:28,fontWeight:800,color:daysLeft<=7?TH.red:daysLeft<=30?TH.amber:TH.blue,letterSpacing:"-1px",marginBottom:2}}>{daysLeft>0?daysLeft:"Today!"} <span style={{fontSize:14,fontWeight:500,color:TH.sub}}>{daysLeft>0?"days left":""}</span></div>
+                {dailyTarget&&<div style={{fontSize:11,color:TH.sub}}>Target: <span style={{color:TH.text,fontWeight:600}}>{dailyTarget} questions/day</span> to cover all unseen</div>}
+                <button onClick={()=>{setExamDate("");}} style={{fontSize:10,color:TH.dim,background:"transparent",border:"none",cursor:"pointer",marginTop:4,padding:0}}>Clear date</button>
+              </div>
+            ) : (
+              <div>
+                <div style={{fontSize:12,color:TH.sub,marginBottom:8}}>Set your exam date for a daily target.</div>
+                <input type="date" value={examDate} onChange={e=>setExamDate(e.target.value)}
+                  style={{padding:"7px 10px",borderRadius:8,border:`1px solid ${TH.border}`,background:TH.panel,color:TH.text,fontSize:13,width:"100%",outline:"none"}}/>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* WEAK AREA ALERT */}
+        {weakSpot&&(
+          <div style={{padding:"12px 16px",borderRadius:12,background:`${TH.red}10`,border:`1px solid ${TH.red}30`,marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <div>
+              <div style={{fontSize:12,fontWeight:700,color:TH.red,marginBottom:2}}>Weak Area Detected</div>
+              <div style={{fontSize:12,color:TH.sub}}>Your weakest sub-topic is <span style={{color:TH.text,fontWeight:600}}>{weakSpot.code} {weakSpot.name}</span> — {weakSpot.acc}% accuracy ({weakSpot.seen} questions seen)</div>
+            </div>
+            <button onClick={()=>{setSubject(weakSpot.subCode);setActiveSubtopic(weakSpot.code);setActiveFilter("all");setSessLen(20);startStudy();}}
+              style={{padding:"7px 14px",borderRadius:8,border:`1px solid ${TH.red}50`,background:`${TH.red}15`,color:TH.red,fontSize:12,fontWeight:700,cursor:"pointer",flexShrink:0,marginLeft:12}}>
+              Drill it
+            </button>
+          </div>
+        )}
           </div>
         </div>
 
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
           {/* STUDY PANEL */}
-          <div style={{padding:"18px",borderRadius:14,background:T.card,border:`1px solid ${T.border}`,display:"flex",flexDirection:"column",gap:14}}>
+          <div style={{padding:"18px",borderRadius:14,background:TH.card,border:`1px solid ${TH.border}`,display:"flex",flexDirection:"column",gap:14}}>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <div style={{width:28,height:28,borderRadius:7,background:`${T.blue}15`,border:`1px solid ${T.blue}30`,display:"flex",alignItems:"center",justifyContent:"center"}}><BookOpen size={13} color={T.blue}/></div>
-              <div><div style={{fontSize:13,fontWeight:700}}>Study Mode</div><div style={{fontSize:11,color:T.sub}}>Practice at your own pace</div></div>
+              <div style={{width:28,height:28,borderRadius:7,background:`${TH.blue}15`,border:`1px solid ${TH.blue}30`,display:"flex",alignItems:"center",justifyContent:"center"}}><BookOpen size={13} color={TH.blue}/></div>
+              <div><div style={{fontSize:13,fontWeight:700}}>Study Mode</div><div style={{fontSize:11,color:TH.sub}}>Practice at your own pace</div></div>
             </div>
 
             {/* Subject */}
             <div>
-              <div style={{fontSize:10,color:T.sub,fontWeight:600,textTransform:"uppercase",letterSpacing:"1px",marginBottom:7}}>Subject</div>
+              <div style={{fontSize:10,color:TH.sub,fontWeight:600,textTransform:"uppercase",letterSpacing:"1px",marginBottom:7}}>Subject</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}>
                 {SUBJECTS.map(s=>{const active=subject===s.code;return(
                   <div key={s.code} onClick={()=>{setSubject(s.code);setActiveSubtopic(null);setActiveFilter("all");}}
-                    style={{padding:"8px 10px",borderRadius:8,cursor:"pointer",border:`1px solid ${active?s.color+"50":T.border}`,background:active?s.bg:T.panel,transition:"all 0.15s"}}>
-                    <div style={{fontSize:11,fontWeight:600,color:active?s.color:T.sub}}>{s.name}</div>
-                    <div style={{fontSize:10,color:T.dim}}>{s.count.toLocaleString()} Q</div>
+                    style={{padding:"8px 10px",borderRadius:8,cursor:"pointer",border:`1px solid ${active?s.color+"50":TH.border}`,background:active?s.bg:TH.panel,transition:"all 0.15s"}}>
+                    <div style={{fontSize:11,fontWeight:600,color:active?s.color:TH.sub}}>{s.name}</div>
+                    <div style={{fontSize:10,color:TH.dim}}>{s.count.toLocaleString()} Q</div>
                   </div>
                 );})}
               </div>
@@ -676,18 +855,18 @@ export default function App(){
 
             {/* Question filters */}
             <div>
-              <div style={{fontSize:10,color:T.sub,fontWeight:600,textTransform:"uppercase",letterSpacing:"1px",marginBottom:7,display:"flex",alignItems:"center",gap:4}}><Filter size={11} color={T.sub}/>Question Filter</div>
+              <div style={{fontSize:10,color:TH.sub,fontWeight:600,textTransform:"uppercase",letterSpacing:"1px",marginBottom:7,display:"flex",alignItems:"center",gap:4}}><Filter size={11} color={TH.sub}/>Question Filter</div>
               <div style={{display:"flex",flexDirection:"column",gap:4}}>
                 {FILTERS.map(f=>{
                   const count=filterCounts[f.id];
                   const active=activeFilter===f.id;
-                  const color=filterColors[f.id]||T.blue;
+                  const color=filterColors[f.id]||TH.blue;
                   const disabled=count===0;
                   return(
                     <button key={f.id} onClick={()=>!disabled&&setActiveFilter(f.id)}
-                      style={{display:"flex",alignItems:"center",gap:8,padding:"8px 11px",borderRadius:8,cursor:disabled?"not-allowed":"pointer",border:`1px solid ${active?color+"50":T.border}`,background:active?`${color}10`:T.panel,transition:"all 0.15s",opacity:disabled?0.4:1}}>
-                      <span style={{flex:1,fontSize:12,fontWeight:active?600:400,color:active?color:T.sub,textAlign:"left"}}>{f.label}</span>
-                      <span style={{fontSize:11,fontWeight:700,padding:"1px 7px",borderRadius:10,background:active?`${color}20`:T.border,color:active?color:T.dim}}>{count}</span>
+                      style={{display:"flex",alignItems:"center",gap:8,padding:"8px 11px",borderRadius:8,cursor:disabled?"not-allowed":"pointer",border:`1px solid ${active?color+"50":TH.border}`,background:active?`${color}10`:TH.panel,transition:"all 0.15s",opacity:disabled?0.4:1}}>
+                      <span style={{flex:1,fontSize:12,fontWeight:active?600:400,color:active?color:TH.sub,textAlign:"left"}}>{f.label}</span>
+                      <span style={{fontSize:11,fontWeight:700,padding:"1px 7px",borderRadius:10,background:active?`${color}20`:TH.border,color:active?color:TH.dim}}>{count}</span>
                     </button>
                   );
                 })}
@@ -695,62 +874,62 @@ export default function App(){
             </div>
 
             {/* Slider */}
-            <div style={{padding:"12px",borderRadius:10,background:T.panel,border:`1px solid ${T.border}`}}>
+            <div style={{padding:"12px",borderRadius:10,background:TH.panel,border:`1px solid ${TH.border}`}}>
               <Slider value={sessLen} max={maxQ} onChange={setSessLen}/>
             </div>
 
             <button onClick={startStudy} disabled={loading||filteredPool.length===0}
-              style={{padding:"12px",borderRadius:10,border:`1px solid ${T.blue}50`,background:"linear-gradient(135deg,#1A4BA3,#1E5FC4)",color:T.white,fontSize:14,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,opacity:filteredPool.length===0?0.5:1}}>
+              style={{padding:"12px",borderRadius:10,border:`1px solid ${TH.blue}50`,background:"linear-gradient(135deg,#1A4BA3,#1E5FC4)",color:TH.white,fontSize:14,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,opacity:filteredPool.length===0?0.5:1}}>
               <Zap size={13}/>{loading?"Loading...":filteredPool.length===0?"No questions match":"Start Studying"}
             </button>
           </div>
 
           {/* EXAM PANEL */}
-          <div style={{padding:"18px",borderRadius:14,background:T.card,border:`1px solid ${T.border}`,display:"flex",flexDirection:"column",gap:12}}>
+          <div style={{padding:"18px",borderRadius:14,background:TH.card,border:`1px solid ${TH.border}`,display:"flex",flexDirection:"column",gap:12}}>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <div style={{width:28,height:28,borderRadius:7,background:`${T.amber}15`,border:`1px solid ${T.amber}30`,display:"flex",alignItems:"center",justifyContent:"center"}}><GraduationCap size={13} color={T.amber}/></div>
-              <div><div style={{fontSize:13,fontWeight:700}}>Exam Mode</div><div style={{fontSize:11,color:T.sub}}>Official EASA format</div></div>
+              <div style={{width:28,height:28,borderRadius:7,background:`${TH.amber}15`,border:`1px solid ${TH.amber}30`,display:"flex",alignItems:"center",justifyContent:"center"}}><GraduationCap size={13} color={TH.amber}/></div>
+              <div><div style={{fontSize:13,fontWeight:700}}>Exam Mode</div><div style={{fontSize:11,color:TH.sub}}>Official EASA format</div></div>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:5}}>
               {Object.entries(EXAM_SPECS).map(([code,spec])=>{const active=examSubject===code;return(
                 <div key={code} onClick={()=>setExamSubject(code)}
-                  style={{padding:"10px 12px",borderRadius:9,cursor:"pointer",border:`1px solid ${active?spec.color+"50":T.border}`,background:active?`${spec.color}08`:T.panel,transition:"all 0.15s",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  style={{padding:"10px 12px",borderRadius:9,cursor:"pointer",border:`1px solid ${active?spec.color+"50":TH.border}`,background:active?`${spec.color}08`:TH.panel,transition:"all 0.15s",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <div>
-                    <div style={{fontSize:12,fontWeight:600,color:active?spec.color:T.text}}>{spec.name}</div>
-                    <div style={{fontSize:10,color:T.dim,marginTop:1}}><span style={{color:active?spec.color:T.sub,fontWeight:600}}>{spec.questions}Q</span>{" · "}{spec.minutes} min</div>
+                    <div style={{fontSize:12,fontWeight:600,color:active?spec.color:TH.text}}>{spec.name}</div>
+                    <div style={{fontSize:10,color:TH.dim,marginTop:1}}><span style={{color:active?spec.color:TH.sub,fontWeight:600}}>{spec.questions}Q</span>{" · "}{spec.minutes} min</div>
                   </div>
                   {active&&<CheckCircle size={13} color={spec.color}/>}
                 </div>
               );})}
             </div>
-            <div style={{padding:"9px 12px",borderRadius:8,background:T.panel,border:`1px solid ${T.border}`}}>
+            <div style={{padding:"9px 12px",borderRadius:8,background:TH.panel,border:`1px solid ${TH.border}`}}>
               <div style={{display:"flex",gap:14,fontSize:12}}>
-                <div><span style={{color:T.sub}}>Questions: </span><span style={{fontWeight:700}}>{EXAM_SPECS[examSubject]?.questions}</span></div>
-                <div><span style={{color:T.sub}}>Time: </span><span style={{fontWeight:700}}>{EXAM_SPECS[examSubject]?.minutes} min</span></div>
-                <div><span style={{color:T.sub}}>Pass: </span><span style={{fontWeight:700,color:T.green}}>75%</span></div>
+                <div><span style={{color:TH.sub}}>Questions: </span><span style={{fontWeight:700}}>{EXAM_SPECS[examSubject]?.questions}</span></div>
+                <div><span style={{color:TH.sub}}>Time: </span><span style={{fontWeight:700}}>{EXAM_SPECS[examSubject]?.minutes} min</span></div>
+                <div><span style={{color:TH.sub}}>Pass: </span><span style={{fontWeight:700,color:TH.green}}>75%</span></div>
               </div>
             </div>
-            <div style={{padding:"9px 12px",borderRadius:8,background:`${T.amber}08`,border:`1px solid ${T.amber}25`,fontSize:12,color:T.sub}}>No answers shown during exam. Submit to see results and review all answers.</div>
+            <div style={{padding:"9px 12px",borderRadius:8,background:`${TH.amber}08`,border:`1px solid ${TH.amber}25`,fontSize:12,color:TH.sub}}>No answers shown during exam. Submit to see results and review all answers.</div>
             {Object.keys(history.seen).length>0&&(
-              <div style={{padding:"9px 12px",borderRadius:8,background:T.panel,border:`1px solid ${T.border}`,fontSize:12}}>
-                <div style={{color:T.sub,marginBottom:4,fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:"0.5px"}}>Your History</div>
+              <div style={{padding:"9px 12px",borderRadius:8,background:TH.panel,border:`1px solid ${TH.border}`,fontSize:12}}>
+                <div style={{color:TH.sub,marginBottom:4,fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:"0.5px"}}>Your History</div>
                 <div style={{display:"flex",gap:14}}>
-                  <div><span style={{color:T.blue,fontWeight:700}}>{Object.keys(history.seen).length}</span><span style={{color:T.sub}}> seen</span></div>
-                  <div><span style={{color:T.red,fontWeight:700}}>{Object.keys(history.incorrect).length}</span><span style={{color:T.sub}}> incorrect</span></div>
-                  <div><span style={{color:T.amber,fontWeight:700}}>{flagged.size}</span><span style={{color:T.sub}}> flagged</span></div>
+                  <div><span style={{color:TH.blue,fontWeight:700}}>{Object.keys(history.seen).length}</span><span style={{color:TH.sub}}> seen</span></div>
+                  <div><span style={{color:TH.red,fontWeight:700}}>{Object.keys(history.incorrect).length}</span><span style={{color:TH.sub}}> incorrect</span></div>
+                  <div><span style={{color:TH.amber,fontWeight:700}}>{flagged.size}</span><span style={{color:TH.sub}}> flagged</span></div>
                 </div>
               </div>
             )}
             <button onClick={startExam} disabled={loading}
-              style={{padding:"12px",borderRadius:10,border:`1px solid ${T.amber}50`,background:"linear-gradient(135deg,#92400E,#B45309)",color:T.white,fontSize:14,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:"auto"}}>
+              style={{padding:"12px",borderRadius:10,border:`1px solid ${TH.amber}50`,background:"linear-gradient(135deg,#92400E,#B45309)",color:TH.white,fontSize:14,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:"auto"}}>
               <Timer size={13}/>{loading?"Loading...":"Begin Exam"}
             </button>
-            <button onClick={()=>setHistory({seen:{},incorrect:{}})} style={{padding:"7px",borderRadius:8,border:`1px solid ${T.border}`,background:"transparent",color:T.dim,fontSize:11,cursor:"pointer",fontWeight:500}}>Reset study history</button>
+            <button onClick={()=>setHistory({seen:{},incorrect:{}})} style={{padding:"7px",borderRadius:8,border:`1px solid ${TH.border}`,background:"transparent",color:TH.dim,fontSize:11,cursor:"pointer",fontWeight:500}}>Reset study history</button>
           </div>
         </div>
       </div>
     </div>
-  );
+  ); }
 
   // ═══════════════════════════════════════════════════════════════════════
   // STUDY

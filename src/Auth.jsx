@@ -32,7 +32,7 @@ async function supabaseAuth(endpoint, body) {
   return r.json();
 }
 
-export default function AuthScreen({ onAuth, onGuest }) {
+export default function AuthScreen({ onAuth }) {
   const [mode,     setMode]     = useState("login"); // login | signup | forgot
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
@@ -157,13 +157,7 @@ export default function AuthScreen({ onAuth, onGuest }) {
           </div>
         </div>
 
-        {/* Guest mode */}
-        <button onClick={onGuest} style={{ width:"100%", padding:"13px", borderRadius:11, border:`1px solid ${T.border}`, background:"transparent", color:T.sub, fontSize:14, fontWeight:600, cursor:"pointer" }}>
-          Continue as Guest
-        </button>
-        <div style={{ textAlign:"center", fontSize:11, color:T.dim, marginTop:10 }}>
-          Guest progress is saved locally. Sign in to sync across devices.
-        </div>
+
       </div>
     </div>
   );

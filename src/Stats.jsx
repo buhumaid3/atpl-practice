@@ -160,11 +160,106 @@ function SubtopicBar({ topic, correct, attempted, color }) {
   );
 }
 
+
+// ── PERFORMANCE CHART ───────────────────────────────────────────────────────
+function PerformanceChart({ sessions, subjectCode, color }) {
+  if (!sessions || sessions.length === 0) return (
+    <div style={{ padding:"20px", textAlign:"center", color:"#8888A0", fontSize:13 }}>
+      No session data yet. Complete study sessions to see your trend.
+    </div>
+  );
+
+  // Filter and sort by date, group by subject if specified
+  const filtered = sessions
+    .filter(s => !subjectCode || s.subject === subjectCode || subjectCode === "ALL")
+    .sort((a,b) => new Date(a.date) - new Date(b.date))
+    .slice(-20); // last 20 sessions
+
+  if (filtered.length < 2) return (
+    <div style={{ padding:"20px", textAlign:"center", color:"#8888A0", fontSize:13 }}>
+      Complete at least 2 sessions to see your accuracy trend.
+    </div>
+  );
+
+  const data = filtered.map(s => ({
+    date: new Date(s.date).toLocaleDateString("en-GB", { day:"numeric", month:"short" }),
+    acc: s.score && s.score.correct + s.score.wrong > 0
+      ? Math.round((s.score.correct / (s.score.correct + s.score.wrong)) * 100)
+      : 0,
+    total: s.score ? s.score.correct + s.score.wrong + s.score.skipped : 0,
+  }));
+
+  const W = 600, H = 160, PAD = { top:16, right:16, bottom:32, left:36 };
+  const innerW = W - PAD.left - PAD.right;
+  const innerH = H - PAD.top - PAD.bottom;
+
+  const minY = 0, maxY = 100;
+  const xStep = innerW / (data.length - 1);
+
+  function xPos(i) { return PAD.left + i * xStep; }
+  function yPos(v) { return PAD.top + innerH - ((v - minY) / (maxY - minY)) * innerH; }
+
+  // Build SVG path
+  const points = data.map((d,i) => `${xPos(i)},${yPos(d.acc)}`).join(" ");
+  const linePath = `M ${data.map((d,i) => `${xPos(i)} ${yPos(d.acc)}`).join(" L ")}`;
+  const areaPath = `M ${xPos(0)} ${yPos(data[0].acc)} ${data.map((d,i) => `L ${xPos(i)} ${yPos(d.acc)}`).join(" ")} L ${xPos(data.length-1)} ${PAD.top+innerH} L ${xPos(0)} ${PAD.top+innerH} Z`;
+
+  const latestAcc = data[data.length-1].acc;
+  const firstAcc = data[0].acc;
+  const trend = latestAcc - firstAcc;
+
+  return (
+    <div>
+      {/* Trend summary */}
+      <div style={{ display:"flex", gap:16, marginBottom:12 }}>
+        <div style={{ fontSize:24, fontWeight:800, color:latestAcc>=75?"#22C55E":latestAcc>=50?"#F59E0B":"#EF4444", letterSpacing:"-1px" }}>{latestAcc}%</div>
+        <div style={{ fontSize:12, color:"#8888A0", alignSelf:"center" }}>
+          Latest accuracy
+          {trend !== 0 && <span style={{ color:trend>0?"#22C55E":"#EF4444", marginLeft:6, fontWeight:600 }}>
+            {trend>0?"▲":"▼"} {Math.abs(trend)}% vs first session
+          </span>}
+        </div>
+      </div>
+
+      {/* SVG chart */}
+      <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ overflow:"visible" }}>
+        {/* Grid lines */}
+        {[0,25,50,75,100].map(v => (
+          <g key={v}>
+            <line x1={PAD.left} y1={yPos(v)} x2={PAD.left+innerW} y2={yPos(v)}
+              stroke="#1C1C22" strokeWidth="1" strokeDasharray={v===75?"4,4":"2,4"}/>
+            <text x={PAD.left-6} y={yPos(v)+4} fontSize="10" fill="#444455" textAnchor="end">{v}</text>
+            {v===75&&<text x={PAD.left+innerW+4} y={yPos(v)+4} fontSize="9" fill="#22C55E" textAnchor="start">pass</text>}
+          </g>
+        ))}
+
+        {/* Area fill */}
+        <path d={areaPath} fill={`${color||"#3B9EFF"}20`}/>
+
+        {/* Line */}
+        <path d={linePath} fill="none" stroke={color||"#3B9EFF"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+
+        {/* Data points */}
+        {data.map((d,i) => (
+          <g key={i}>
+            <circle cx={xPos(i)} cy={yPos(d.acc)} r="4" fill={color||"#3B9EFF"} stroke="#09090B" strokeWidth="2"/>
+            {/* X axis labels — only show every Nth */}
+            {(i === 0 || i === data.length-1 || (data.length <= 10) || i % Math.ceil(data.length/6) === 0) && (
+              <text x={xPos(i)} y={H-6} fontSize="9" fill="#444455" textAnchor="middle">{d.date}</text>
+            )}
+          </g>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
 // ── MAIN STATS SCREEN ───────────────────────────────────────────────────────
 export default function StatsScreen({ onClose, questionBank }) {
   const history  = loadHistory();
   const flagged  = loadFlagged();
   const sessions = loadSessions();
+  const [chartSubject, setChartSubject] = useState("ALL");
   const [activeSubject, setActiveSubject] = useState(null);
 
   const totalSeen      = Object.keys(history.seen).length;
@@ -391,6 +486,29 @@ export default function StatsScreen({ onClose, questionBank }) {
             </div>
           </div>
         )}
+
+        {/* ── PERFORMANCE CHARTS ── */}
+        <div style={{ marginBottom:28 }}>
+          <div style={{ fontSize:11, color:T.sub, fontWeight:600, textTransform:"uppercase", letterSpacing:"1.5px", marginBottom:14, display:"flex", alignItems:"center", gap:5 }}>
+            <TrendingUp size={12} color={T.sub}/>Performance Over Time
+          </div>
+          <div style={{ padding:"20px", borderRadius:12, background:T.card, border:`1px solid ${T.border}` }}>
+            {/* Subject filter for chart */}
+            <div style={{ display:"flex", gap:6, marginBottom:16, flexWrap:"wrap" }}>
+              {[{code:"ALL",name:"All",color:T.blue},...SUBJECTS].map(s=>(
+                <button key={s.code} onClick={()=>setChartSubject(s.code)}
+                  style={{ padding:"5px 12px", borderRadius:8, border:`1px solid ${chartSubject===s.code?s.color+"60":T.border}`, background:chartSubject===s.code?`${s.color}15`:T.panel, color:chartSubject===s.code?s.color:T.sub, fontSize:12, fontWeight:chartSubject===s.code?600:400, cursor:"pointer" }}>
+                  {s.name}
+                </button>
+              ))}
+            </div>
+            <PerformanceChart
+              sessions={sessions}
+              subjectCode={chartSubject}
+              color={SUBJECTS.find(s=>s.code===chartSubject)?.color||T.blue}
+            />
+          </div>
+        </div>
 
         {/* ── RESET ── */}
         <div style={{ padding:"16px", borderRadius:12, background:T.card, border:`1px solid ${T.border}`, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
