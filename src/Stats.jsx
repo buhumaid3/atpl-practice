@@ -510,6 +510,23 @@ export default function StatsScreen({ onClose, questionBank }) {
           </div>
         </div>
 
+        {/* ── OFFLINE CACHE ── */}
+        <div style={{ padding:"16px", borderRadius:12, background:T.card, border:`1px solid ${T.border}`, display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
+          <div>
+            <div style={{ fontSize:13, fontWeight:600, marginBottom:3 }}>Offline Cache</div>
+            <div style={{ fontSize:12, color:T.sub }}>Questions are cached automatically after login for offline use.</div>
+          </div>
+          <button onClick={async()=>{
+            if(window.confirm("Clear cached questions? You will need to be online to study until re-cached.")) {
+              const { clearQuestionCache } = await import("./useOffline.js");
+              await clearQuestionCache();
+              alert("Cache cleared.");
+            }
+          }} style={{ padding:"8px 14px", borderRadius:8, border:`1px solid ${T.border}`, background:"transparent", color:T.sub, cursor:"pointer", fontSize:12, fontWeight:600, flexShrink:0, marginLeft:12 }}>
+            Clear Cache
+          </button>
+        </div>
+
         {/* ── RESET ── */}
         <div style={{ padding:"16px", borderRadius:12, background:T.card, border:`1px solid ${T.border}`, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
           <div>

@@ -9,6 +9,7 @@ import {
   AlertCircle, ChevronDown, ChevronUp, Layers, Activity, Users
 } from "lucide-react";
 import StatsScreen from "./Stats.jsx";
+import { registerSW, cacheAllQuestions, getQuestionCacheStatus, clearQuestionCache, isOnline } from "./useOffline.js";
 import GroupsScreen from "./Groups.jsx";
 import AuthScreen from "./Auth.jsx";
 import { pullProgress, pushProgress, signOut } from "./useSync.js";
@@ -406,6 +407,9 @@ export default function App(){
   const [examTimeTaken, setExamTimeTaken]= useState(0);
   const [horizAnim,     setHorizAnim]    = useState({pitch:0,roll:0});
   const [lastSession,   setLastSession]  = useState(null); // for sharing to groups
+  const [online,        setOnline]       = useState(()=>typeof navigator!=="undefined"?navigator.onLine:true);
+  const [cacheStatus,   setCacheStatus]  = useState(null); // null | "caching" | "cached" | "error"
+  const [cacheCount,    setCacheCount]   = useState(0);
 
   // Theme
   const [theme, setTheme] = useState(()=>localStorage.getItem("atpl_theme")||"dark");
@@ -436,6 +440,35 @@ export default function App(){
   const TH = getTheme(theme);
 
   useEffect(()=>{saveHistory(history);},[history]);
+
+  // Register service worker on mount
+  useEffect(()=>{
+    registerSW();
+    // Check cache status
+    getQuestionCacheStatus().then(s=>{ if(s.cached){ setCacheStatus("cached"); setCacheCount(s.count); } });
+    // Online/offline listeners
+    const onOnline  = ()=>setOnline(true);
+    const onOffline = ()=>setOnline(false);
+    window.addEventListener("online",  onOnline);
+    window.addEventListener("offline", onOffline);
+    return ()=>{ window.removeEventListener("online",onOnline); window.removeEventListener("offline",onOffline); };
+  },[]);
+
+  // Cache all questions after login
+  useEffect(()=>{
+    if(!authSession||cacheStatus==="cached"||cacheStatus==="caching") return;
+    const t = setTimeout(async()=>{
+      setCacheStatus("caching");
+      try {
+        await cacheAllQuestions(authSession.access_token, (subject, count)=>{
+          setCacheCount(c=>c+1);
+        });
+        setCacheStatus("cached");
+        getQuestionCacheStatus().then(s=>setCacheCount(s.count));
+      } catch { setCacheStatus("error"); }
+    }, 3000); // wait 3s after login before caching
+    return ()=>clearTimeout(t);
+  },[authSession]);
   useEffect(()=>{localStorage.setItem("atpl_theme",theme);},[theme]);
   useEffect(()=>{localStorage.setItem("atpl_examdate",examDate);},[examDate]);
   useEffect(()=>{saveFlagged(flagged);},[flagged]);
@@ -761,6 +794,17 @@ export default function App(){
           {authSession&&<div style={{display:"flex",alignItems:"center",gap:4,padding:"4px 9px",borderRadius:6,background:TH.card,border:`1px solid ${TH.border}`,fontSize:11}}>
             <div style={{width:5,height:5,borderRadius:"50%",background:syncStatus==="synced"?TH.green:syncStatus==="syncing"?TH.amber:syncStatus==="error"?TH.red:TH.dim}}/>
             <span style={{color:TH.sub}}>{syncStatus==="synced"?"Synced":syncStatus==="syncing"?"Syncing...":"Offline"}</span>
+          </div>}
+          {/* Offline indicator */}
+          {!online&&<div style={{display:"flex",alignItems:"center",gap:4,padding:"4px 9px",borderRadius:6,background:`${TH.amber}15`,border:`1px solid ${TH.amber}40`,fontSize:11,color:TH.amber,fontWeight:600}}>
+            Offline
+          </div>}
+          {/* Cache status */}
+          {cacheStatus==="caching"&&<div style={{display:"flex",alignItems:"center",gap:4,padding:"4px 9px",borderRadius:6,background:TH.card,border:`1px solid ${TH.border}`,fontSize:11,color:TH.sub}}>
+            Caching...
+          </div>}
+          {cacheStatus==="cached"&&online&&<div style={{display:"flex",alignItems:"center",gap:4,padding:"4px 9px",borderRadius:6,background:`${TH.green}10`,border:`1px solid ${TH.green}30`,fontSize:11,color:TH.green}}>
+            Available offline
           </div>}
           {/* Theme toggle */}
           <button onClick={()=>setTheme(t=>t==="dark"?"light":"dark")} style={{padding:"5px 9px",borderRadius:8,border:`1px solid ${TH.border}`,background:TH.card,color:TH.sub,cursor:"pointer",fontSize:13}}>
