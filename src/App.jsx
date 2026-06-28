@@ -473,6 +473,7 @@ export default function App(){
     localStorage.removeItem("atpl_session");
     setAuthSession(null);
     setSyncStatus(null);
+    setScreen("auth"); // Always redirect to sign in after sign out
   }
 
   async function syncToCloud() {
