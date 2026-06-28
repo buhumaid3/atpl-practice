@@ -6,9 +6,10 @@ import {
   TrendingUp, RotateCcw, X, Send, User, ThumbsUp,
   GraduationCap, Timer, AlertTriangle, Flag, Eye,
   Circle, Zap, Filter, Image, ImageOff, EyeOff,
-  AlertCircle, ChevronDown, ChevronUp, Layers, Activity
+  AlertCircle, ChevronDown, ChevronUp, Layers, Activity, Users
 } from "lucide-react";
 import StatsScreen from "./Stats.jsx";
+import GroupsScreen from "./Groups.jsx";
 import AuthScreen from "./Auth.jsx";
 import { pullProgress, pushProgress, signOut } from "./useSync.js";
 
@@ -404,6 +405,7 @@ export default function App(){
   const [reviewIdx,     setReviewIdx]    = useState(0);
   const [examTimeTaken, setExamTimeTaken]= useState(0);
   const [horizAnim,     setHorizAnim]    = useState({pitch:0,roll:0});
+  const [lastSession,   setLastSession]  = useState(null); // for sharing to groups
 
   // Theme
   const [theme, setTheme] = useState(()=>localStorage.getItem("atpl_theme")||"dark");
@@ -766,6 +768,9 @@ export default function App(){
           </button>
           <button onClick={()=>setScreen("stats")} style={{display:"flex",alignItems:"center",gap:4,padding:"5px 10px",borderRadius:8,border:`1px solid ${TH.border}`,background:TH.card,color:TH.sub,cursor:"pointer",fontSize:12,fontWeight:600}}>
             <Activity size={13}/>Stats
+          </button>
+          <button onClick={()=>setScreen("groups")} style={{display:"flex",alignItems:"center",gap:4,padding:"5px 10px",borderRadius:8,border:`1px solid ${TH.border}`,background:TH.card,color:TH.sub,cursor:"pointer",fontSize:12,fontWeight:600}}>
+            <Users size={13}/>Groups
           </button>
           {authSession
             ? <button onClick={handleSignOut} style={{padding:"5px 12px",borderRadius:8,border:`1px solid ${TH.red}40`,background:`${TH.red}08`,color:TH.red,cursor:"pointer",fontSize:12,fontWeight:600}}>Sign out</button>
@@ -1289,6 +1294,16 @@ export default function App(){
       </div>
     );
   }
+
+  // ─── GROUPS SCREEN ────────────────────────────────────────────────────────
+  if(screen==="groups") return(
+    <GroupsScreen
+      token={authSession?.access_token}
+      userId={authSession?.user?.id || authSession?.user_id}
+      onClose={()=>setScreen("home")}
+      lastSession={lastSession}
+    />
+  );
 
   // ─── STATS SCREEN ─────────────────────────────────────────────────────────
   if(screen==="stats") return(
