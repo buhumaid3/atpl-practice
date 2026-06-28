@@ -495,7 +495,7 @@ export default function StatsScreen({ onClose, questionBank }) {
           <div style={{ padding:"20px", borderRadius:12, background:T.card, border:`1px solid ${T.border}` }}>
             {/* Subject filter for chart */}
             <div style={{ display:"flex", gap:6, marginBottom:16, flexWrap:"wrap" }}>
-              {[{code:"ALL",name:"All",color:T.blue},...SUBJECTS].map(s=>(
+              {SUBJECTS.map(s=>(
                 <button key={s.code} onClick={()=>setChartSubject(s.code)}
                   style={{ padding:"5px 12px", borderRadius:8, border:`1px solid ${chartSubject===s.code?s.color+"60":T.border}`, background:chartSubject===s.code?`${s.color}15`:T.panel, color:chartSubject===s.code?s.color:T.sub, fontSize:12, fontWeight:chartSubject===s.code?600:400, cursor:"pointer" }}>
                   {s.name}

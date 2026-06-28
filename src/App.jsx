@@ -24,7 +24,6 @@ const EXAM_SPECS = {
 
 // ── SUBJECTS ──────────────────────────────────────────────────────────────
 const SUBJECTS = [
-  { code:"ALL",  name:"All Subjects",   short:"ALL",  color:"#3B9EFF", bg:"#0F2040", count:2380 },
   { code:"010",  name:"Air Law",        short:"010",  color:"#FF6B6B", bg:"#2A1010", count:1274 },
   { code:"031",  name:"Mass & Balance", short:"031",  color:"#4ECDC4", bg:"#0A2422", count:400  },
   { code:"032",  name:"Performance",    short:"032",  color:"#FFD93D", bg:"#2A2000", count:706  },
@@ -135,13 +134,14 @@ function saveFlagged(f){try{localStorage.setItem("atpl_flagged",JSON.stringify([
 
 // ── HELPERS ───────────────────────────────────────────────────────────────
 async function fetchQ(code){
-  // Paginate to get all rows — Supabase free tier caps at 1000 per request
+  // Paginate — Supabase caps at 1000 per request
   const PAGE = 1000;
   let all = [], offset = 0, done = false;
   while(!done){
     let url=`${SUPABASE_URL}/rest/v1/questions?select=*&limit=${PAGE}&offset=${offset}&order=id`;
-    if(code!=="ALL")url+=`&subject_code=eq.${code}`;
-    const r=await fetch(url,{headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Range-Unit":"items"}});
+    // Always filter by subject — no ALL mode
+    if(code && code !== "ALL") url+=`&subject_code=eq.${code}`;
+    const r=await fetch(url,{headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}});
     const batch=await r.json();
     if(!Array.isArray(batch)||batch.length===0){done=true;}
     else{all=[...all,...batch];offset+=batch.length;if(batch.length<PAGE)done=true;}
@@ -206,19 +206,27 @@ function TimerRing({remaining,total,size=52}){
 function Slider({value,max,onChange}){
   const pct=max>1?((value-1)/(max-1))*100:0;
   return(<div>
-    <style>{`.qs{-webkit-appearance:none;appearance:none;width:100%;height:5px;border-radius:3px;background:${T.border};outline:none;cursor:pointer;}.qs::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:18px;height:18px;border-radius:50%;background:${T.blue};cursor:pointer;box-shadow:0 0 8px ${T.blue}60;}.qs::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:${T.blue};cursor:pointer;border:none;}.qs::-webkit-slider-runnable-track{background:linear-gradient(to right,${T.blue} 0%,${T.blue} ${pct}%,${T.border} ${pct}%,${T.border} 100%);border-radius:3px;height:5px;}`}</style>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+    <style>{`
+      .qs{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:3px;background:${T.border};outline:none;cursor:pointer;}
+      .qs::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:28px;height:20px;background:transparent;cursor:pointer;margin-top:-8px;font-size:18px;line-height:1;}
+      .qs::-moz-range-thumb{width:22px;height:22px;background:transparent;cursor:pointer;border:none;font-size:18px;}
+      .qs::-webkit-slider-runnable-track{background:linear-gradient(to right,${T.blue} 0%,${T.blue} ${pct}%,${T.border} ${pct}%,${T.border} 100%);border-radius:3px;height:4px;}
+    `}</style>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
       <div>
-        <div style={{fontSize:11,color:T.sub,fontWeight:600,textTransform:"uppercase",letterSpacing:"1px"}}>Number of Questions</div>
-        <div style={{fontSize:10,color:T.dim,marginTop:2}}>{max.toLocaleString()} available</div>
+        <div style={{fontSize:11,color:T.sub,fontWeight:600,textTransform:"uppercase",letterSpacing:"1px"}}>Questions</div>
+        <div style={{fontSize:10,color:T.dim,marginTop:2}}>{max.toLocaleString()} available in this subject</div>
       </div>
       <div style={{padding:"3px 12px",borderRadius:20,background:`${T.blue}15`,border:`1px solid ${T.blue}40`}}>
         <span style={{fontSize:15,fontWeight:800,color:T.blue}}>{value}</span>
         <span style={{fontSize:11,color:T.sub,marginLeft:3}}>/ {max}</span>
       </div>
     </div>
-    <input type="range" min="1" max={max} value={Math.min(value,max)} onChange={e=>onChange(parseInt(e.target.value))} className="qs"/>
-    <div style={{display:"flex",justifyContent:"space-between",marginTop:5,fontSize:10,color:T.dim}}>
+    <div style={{position:"relative",height:28,display:"flex",alignItems:"center"}}>
+      <input type="range" min="1" max={max} value={Math.min(value,max)} onChange={e=>onChange(parseInt(e.target.value))} className="qs" style={{width:"100%"}}/>
+      <div style={{position:"absolute",left:`calc(${pct}% - 10px)`,top:"50%",transform:"translateY(-50%)",fontSize:18,pointerEvents:"none",userSelect:"none",lineHeight:1}}>✈️</div>
+    </div>
+    <div style={{display:"flex",justifyContent:"space-between",marginTop:4,fontSize:10,color:T.dim}}>
       <span>1</span><span>{Math.round(max/2)}</span><span>{max}</span>
     </div>
   </div>);
@@ -228,7 +236,7 @@ function Slider({value,max,onChange}){
 function SubtopicPicker({ subjectCode, pool, activeSubtopic, onSelect }) {
   const [open, setOpen] = useState(false);
   const topics = SUBTOPICS[subjectCode];
-  if (!topics || subjectCode === "ALL") return null;
+  if (!topics) return null;
 
   // Count questions per subtopic
   const counts = {};
@@ -358,8 +366,8 @@ function ProgressStrip({queue,answers,current}){
 
 // ── MAIN APP ──────────────────────────────────────────────────────────────
 export default function App(){
-  const [screen,        setScreen]       = useState("home");
-  const [subject,       setSubject]      = useState("ALL");
+  const [screen,        setScreen]       = useState(()=>{ try { return localStorage.getItem("atpl_session")?"home":"auth"; } catch { return "auth"; } });
+  const [subject,       setSubject]      = useState("010");
   const [activeFilter,  setActiveFilter] = useState("all");
   const [activeSubtopic,setActiveSubtopic]=useState(null);
   const [sessLen,       setSessLen]      = useState(20);
@@ -414,6 +422,10 @@ export default function App(){
   const [authSession,   setAuthSession]  = useState(()=>{
     try { const s=localStorage.getItem("atpl_session"); return s?JSON.parse(s):null; } catch { return null; }
   });
+  // Start on auth screen if not logged in
+  const [initialScreen] = useState(()=> {
+    try { return localStorage.getItem("atpl_session") ? "home" : "auth"; } catch { return "auth"; }
+  });
   const [syncStatus,    setSyncStatus]   = useState(null); // null | "syncing" | "synced" | "error"
 
   const sRef=useRef(null),qRef=useRef(null),hRef=useRef(null),eTimerRef=useRef(null);
@@ -451,7 +463,7 @@ export default function App(){
       }
       setSyncStatus("synced");
     } catch { setSyncStatus("error"); }
-    setScreen("home");
+    setScreen("home"); // Always go to home after auth
   }
 
   async function handleSignOut() {
@@ -503,6 +515,7 @@ export default function App(){
 
   // Fetch pool when subject changes
   useEffect(()=>{
+    if(!subject) return;
     setLoading(true);
     fetchQ(subject).then(data=>{
       const valid=data.filter(q=>q.correct_answer&&q.option_a).map(q=>({
@@ -519,7 +532,7 @@ export default function App(){
     let pool=[...allPool];
 
     // Apply subtopic filter first
-    if(activeSubtopic&&subject!=="ALL"){
+    if(activeSubtopic){
       pool=pool.filter(q=>classifySubtopic(q.subject_code||subject,q.question)===activeSubtopic);
     }
 
@@ -540,7 +553,7 @@ export default function App(){
   },[allPool,activeFilter,activeSubtopic,history,flagged,subject]);
 
   // Filter counts (against subtopic-filtered pool)
-  const subtopicPool = activeSubtopic&&subject!=="ALL"
+  const subtopicPool = activeSubtopic
     ? allPool.filter(q=>classifySubtopic(q.subject_code||subject,q.question)===activeSubtopic)
     : allPool;
 
@@ -594,8 +607,8 @@ export default function App(){
 
   // ── QUICK 10 ───────────────────────────────────────────────────────────
   function startQuick10() {
-    if (!allPool.length) return;
-    const pool = spacedShuffle(allPool, 10);
+    if (!filteredPool.length) return;
+    const pool = spacedShuffle(filteredPool, 10);
     setQueue(pool); setIdx(0); setSel(null); setRevealed(false);
     setTab("question"); setScore({correct:0,wrong:0,skipped:0});
     setAnswers({}); setSSec(0); setQSec(0); setQTimes({});
@@ -649,7 +662,7 @@ export default function App(){
   }
 
   const q=queue[idx],opts=q?[q.option_a,q.option_b,q.option_c,q.option_d].filter(Boolean):[],correct=q?.correct_answer;
-  const subInfo=SUBJECTS.find(s=>s.code===(q?.subject_code||subject))||SUBJECTS[0];
+  const subInfo=SUBJECTS.find(s=>s.code===(q?.subject_code||subject))||SUBJECTS[0];  // always has a match now
   const isFlagged=q&&flagged.has(q.id),isPinned=q&&pinned.has(q.id);
   const pct=queue.length?Math.round((idx/queue.length)*100):0;
   const labels=["A","B","C","D"],qID=q?extractID(q.filename):null,qHasFig=q?hasFigure(q.question):false;
@@ -678,7 +691,7 @@ export default function App(){
   async function startExam(){
     setLoading(true);
     const spec=EXAM_SPECS[examSubject];
-    const data=await fetchQ(examSubject);
+    const data=await fetchQ(examSubject); // always subject-specific
     const valid=data.filter(q=>q.correct_answer&&q.option_a);
     const pool=shuffle(valid).slice(0,Math.min(spec.questions,valid.length));
     setExamQ(pool);setExamIdx(0);setExamAns({});setExamFlagged(new Set());
@@ -754,7 +767,7 @@ export default function App(){
             <Activity size={13}/>Stats
           </button>
           {authSession
-            ? <button onClick={handleSignOut} style={{padding:"5px 10px",borderRadius:8,border:`1px solid ${TH.border}`,background:TH.card,color:TH.sub,cursor:"pointer",fontSize:12,fontWeight:600}}>Sign out</button>
+            ? <button onClick={handleSignOut} style={{padding:"5px 12px",borderRadius:8,border:`1px solid ${TH.red}40`,background:`${TH.red}08`,color:TH.red,cursor:"pointer",fontSize:12,fontWeight:600}}>Sign out</button>
             : <button onClick={()=>setScreen("auth")} style={{display:"flex",alignItems:"center",gap:4,padding:"5px 10px",borderRadius:8,border:`1px solid ${TH.blue}50`,background:`${TH.blue}10`,color:TH.blue,cursor:"pointer",fontSize:12,fontWeight:600}}>Sign in</button>
           }
         </div>
@@ -832,12 +845,18 @@ export default function App(){
             {/* Subject */}
             <div>
               <div style={{fontSize:10,color:TH.sub,fontWeight:600,textTransform:"uppercase",letterSpacing:"1px",marginBottom:7}}>Subject</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}>
+              <div style={{display:"flex",flexDirection:"column",gap:5}}>
                 {SUBJECTS.map(s=>{const active=subject===s.code;return(
                   <div key={s.code} onClick={()=>{setSubject(s.code);setActiveSubtopic(null);setActiveFilter("all");}}
-                    style={{padding:"8px 10px",borderRadius:8,cursor:"pointer",border:`1px solid ${active?s.color+"50":TH.border}`,background:active?s.bg:TH.panel,transition:"all 0.15s"}}>
-                    <div style={{fontSize:11,fontWeight:600,color:active?s.color:TH.sub}}>{s.name}</div>
-                    <div style={{fontSize:10,color:TH.dim}}>{s.count.toLocaleString()} Q</div>
+                    style={{padding:"10px 12px",borderRadius:9,cursor:"pointer",border:`1px solid ${active?s.color+"60":TH.border}`,background:active?s.bg:TH.panel,transition:"all 0.15s",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div>
+                      <div style={{fontSize:12,fontWeight:600,color:active?s.color:TH.text}}>{s.name}</div>
+                      <div style={{fontSize:10,color:TH.dim}}>{s.short}</div>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:6}}>
+                      <span style={{fontSize:11,fontWeight:700,color:active?s.color:TH.sub}}>{loading&&active?"...":maxQ.toLocaleString()+" Q"}</span>
+                      {active&&<CheckCircle size={13} color={s.color}/>}
+                    </div>
                   </div>
                 );})}
               </div>
